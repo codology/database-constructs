@@ -332,3 +332,84 @@ SET @x = 20000;  -- Set the number of rows to delete
 DELETE FROM country_distances
 ORDER BY RAND()
 LIMIT @x;
+
+SET GLOBAL slow_query_log=1;
+
+-- Indexes
+SELECT count(origin) FROM country_distances cd
+JOIN countries c ON c.country_id = cd.origin
+
+CREATE INDEX idx_origin ON country_distances(origin);
+CREATE INDEX idx_destination ON country_distances(destination);
+
+SELECT count(origin) FROM country_distances cd
+JOIN countries c ON c.country_id = cd.origin
+WHERE c.region_id = 5
+
+-- Partitioning a large table by range
+CREATE TABLE country_stats (
+    country_id INT,
+    year INT,
+    gdp BIGINT,
+    population BIGINT
+) PARTITION BY RANGE (year) (
+    PARTITION p0 VALUES LESS THAN (2000),
+    PARTITION p1 VALUES LESS THAN (2010),
+    PARTITION p2 VALUES LESS THAN (2020),
+    PARTITION p3 VALUES LESS THAN MAXVALUE
+);
+
+-- Querying partitioned data
+SELECT * FROM country_stats WHERE year = 2017;
+194 rows in set (0.035 sec)
+
+-- Partitioning a large table by range
+CREATE TABLE country_stats_partitioned (
+    country_id INT,
+    year INT,
+    gdp BIGINT,
+    population BIGINT
+) PARTITION BY RANGE (year) (
+    PARTITION p0 VALUES LESS THAN (2000),
+    PARTITION p1 VALUES LESS THAN (2010),
+    PARTITION p2 VALUES LESS THAN (2020),
+    PARTITION p3 VALUES LESS THAN MAXVALUE
+);
+-- Updating existing table
+ALTER TABLE country_stats
+PARTITION BY RANGE (year) (
+    PARTITION p0 VALUES LESS THAN (2000),
+    PARTITION p1 VALUES LESS THAN (2010),
+    PARTITION p2 VALUES LESS THAN (2020),
+    PARTITION p3 VALUES LESS THAN MAXVALUE
+);
+-- Insert / Copy data
+INSERT INTO country_stats_partitioned
+SELECT * FROM country_stats
+-- Verify partition information
+SELECT PARTITION_NAME as part_name,PARTITION_ORDINAL_POSITION as part_pos,PARTITION_METHOD as part_meth,PARTITION_EXPRESSION as part_expr, TABLE_ROWS as table_rows, AVG_ROW_LENGTH as row_len, DATA_LENGTH as data_len
+FROM information_schema.partitions 
+WHERE TABLE_SCHEMA='nation' 
+AND TABLE_NAME = 'country_stats_partitioned' 
+AND PARTITION_NAME IS NOT NULL
+
+-- Caching
+-- Enable query cache (only applicable in versions where query cache is supported)
+SET GLOBAL query_cache_size = 1024 * 1024;  -- Set cache size to 1MB
+-- First query execution (result will be cached)
+SELECT COUNT(*) FROM countries WHERE region_id = 2;
+-- Subsequent execution (result will be retrieved from cache)
+SELECT COUNT(*) FROM countries WHERE region_id = 2;
+
+
+-- Profiling
+-- Enable profiling
+SET profiling = 1;
+-- Run the query
+SELECT VARIANCE(gdp) FROM country_stats_partitioned WHERE year = 1982;
+-- Show profiling results
+SHOW PROFILES;
+-- Detailed breakdown of time spent in each phase of the query execution
+SHOW PROFILE FOR QUERY 1;
+--
+--- END ---
